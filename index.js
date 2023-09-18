@@ -16,6 +16,7 @@ function authenticateApiKey(req, res, next) {
   next();
 }
 
+
 app.use(authenticateApiKey);
 
 // Define the REST endpoint for getting movies per actor
