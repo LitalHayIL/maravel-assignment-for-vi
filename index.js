@@ -7,6 +7,7 @@ const restrictedApiKey = 'vi50572182la567845ao';
 
 app.use(express.json());
 
+
 // Middleware to check for API key in headers
 function authenticateApiKey(req, res, next) {
   const providedApiKey = req.headers['x-api-key'];
@@ -19,18 +20,21 @@ function authenticateApiKey(req, res, next) {
 app.use(authenticateApiKey);
 
 
+// function removeFromString(arr, str) {
+//   const pattern = new RegExp(`\\b(?:${arr.join('|')})\\b|\\([^)]*\\)`, 'gi');
+//   return str.replace(pattern, '').trim().replace(/\s+/g, ' ');
+// }
+
 function removeFromString(arr, str) {
-  const regex = new RegExp(`\\b(?:${arr.join('|')})\\b`, 'gi');
-  let result = str.replace(regex, '');
+  const pattern = new RegExp(`\\b(?:${arr.join('|')})\\b|\\([^)]*\\)`, 'gi');
+  const cleanedStr = str.replace(pattern, '').trim().replace(/\s+/g, ' ');
 
-  result = result.replace(/\(\s*\)/g, '');
-  result = result.replace(/\s+/g, ' ');
-
-  result = result.trim();
+  // Split the cleaned string by the first forward slash and keep the first part
+  const parts = cleanedStr.split('/');
+  const result = parts[0].trim();
 
   return result;
 }
-
 
 async function fetchActorId(actorName) {
   try {
@@ -52,16 +56,6 @@ async function fetchActorMovieCredits(actorId) {
     throw error;
   }
 }
-
-// async function fetchMarvelMoviesId(marvelCompaniesIds) {
-//   try {
-//     const marvelMoviesUrl = `https://api.themoviedb.org/3/discover/movie?api_key=${apiKey}&language=en-US&with_companies=${marvelCompaniesIds}`;
-//     const marvelMoviesResponse = await axios.get(marvelMoviesUrl);
-//     return marvelMoviesResponse.data.results.map(movie => movie.id);
-//   } catch (error) {
-//     throw error;
-//   }
-// }
 
 async function searchCompanyByNameAndCountry(companyName, country) {
   try {
@@ -169,6 +163,55 @@ async function findActorsWithMultipleMarvelCharacters(marvelMovieIds) {
   }
 }
 
+
+async function findCharactersWithMultipleActors(marvelMovieIds) {
+  try {
+    const characterActorMap = new Map();
+
+    for (const movieId of marvelMovieIds) {
+      // Fetch movie details to retrive the list of cast
+      const movieDetails = await axios.get(`https://api.themoviedb.org/3/movie/${movieId}/credits?api_key=${apiKey}`);
+
+      // Check if the 'cast' property exists in the response
+      if (movieDetails.data && Array.isArray(movieDetails.data.cast)) {
+        const cast = movieDetails.data.cast;
+
+        // Update the actorDataMap with the actor and character data
+        for (const actor of cast) {
+          const actorName = actor.name;
+          const characterName = (removeFromString(["(uncredited)","(voice)","(archive footage)"], actor.character)).toLowerCase();
+
+
+          // Check if the character is already associated with an actor
+          if (characterActorMap.has(characterName)) {
+            // Character is already associated, check if it's a different actor
+            if (!characterActorMap.get(characterName).includes(actorName)) {
+              characterActorMap.get(characterName).push(actorName);
+            }
+          } else {
+            // Character is not associated, create an entry with the actor
+            characterActorMap.set(characterName, [actorName]);
+          }
+
+        }
+      }
+    }
+
+    // Filter characters played by more than one actor
+    const charactersWithMultipleActors = [];
+    for (const [characterName, actors] of characterActorMap.entries()) {
+      if (actors.length > 1) {
+        charactersWithMultipleActors.push({ characterName, actors });
+      }
+    }
+
+    return charactersWithMultipleActors;
+  } catch (error) {
+    console.error(error);
+    throw new Error('Error finding actors with multiple Marvel characters');
+  }
+}
+
 // REST API for answering the question: Which Marvel movies did each actor play in?
 app.get('/moviesPerActor', async (req, res) => {
   try {
@@ -209,7 +252,7 @@ app.get('/actorsWithMultipleCharacters', async (req, res) => {
     // Fetch Marvel movie IDs
     const marvelMovieIds = await fetchMarvelMoviesId(marvelCompaniesIds);
 
-    // Fetch a list of Marvel actors that play multiple roles
+    // Fetch a list of Marvel actors that played multiple roles
     const actorsWithMultipleMarvelCharacters = await findActorsWithMultipleMarvelCharacters(marvelMovieIds);
 
     res.json(actorsWithMultipleMarvelCharacters);
@@ -218,6 +261,28 @@ app.get('/actorsWithMultipleCharacters', async (req, res) => {
     res.status(500).json({ error: 'Internal Server Error' });
   }
 });
+
+
+// REST API for answering the question: There is roles (characters) that were played by more than one actor?
+
+app.get('/charactersWithMultipleActors', async (req, res) => {
+  try {
+    // Fetch Marvel ID
+    const marvelCompaniesIds = await searchCompanyByNameAndCountry('Marvel', 'US')
+
+    // Fetch Marvel movie IDs
+    const marvelMovieIds = await fetchMarvelMoviesId(marvelCompaniesIds);
+
+    // Fetch a list of Marvel characters that were played by multiple actors
+    const charactersWithMultipleActors = await findCharactersWithMultipleActors(marvelMovieIds);
+    res.json(charactersWithMultipleActors);
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ error: 'Internal Server Error' });
+  }
+});
+
+
 
 // Start the Express server
 app.listen(port, () => {
