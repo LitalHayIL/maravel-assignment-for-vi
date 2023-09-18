@@ -3,8 +3,20 @@ const axios = require('axios');
 const app = express();
 const port = 3000; // You can choose any available port
 const apiKey = 'ac505a02032a33d65dd28b41f72182e1';
+const restrictedApiKey = 'vi50572182la567845ao';
 
 app.use(express.json());
+
+// auth api check
+function authenticateApiKey(req, res, next) {
+  const providedApiKey = req.headers['x-api-key'];
+  if (!providedApiKey || providedApiKey !== restrictedApiKey) {
+    return res.status(401).json({ error: 'Unauthorized' });
+  }
+  next();
+}
+
+app.use(authenticateApiKey);
 
 // Define the REST endpoint for getting movies per actor
 app.get('/moviesPerActor', async (req, res) => {
