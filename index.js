@@ -16,36 +16,50 @@ function authenticateApiKey(req, res, next) {
   next();
 }
 
-
 app.use(authenticateApiKey);
 
-// Define the REST endpoint for getting movies per actor
+
+async function fetchActorId(actorName) {
+  const actorSearchUrl = `https://api.themoviedb.org/3/search/person?api_key=${apiKey}&query=${actorName}`;
+  const actorSearchResponse = await axios.get(actorSearchUrl);
+  const actorId = actorSearchResponse.data.results[0]?.id;
+  return actorId;
+}
+
+async function fetchMovieCreditsById(movieId) {
+  const movieCreditsUrl = `https://api.themoviedb.org/3/movie/${movieId}/credits?api_key=${TMDbApiKey}`;
+  const movieCreditsResponse = await axios.get(movieCreditsUrl);
+  return movieCreditsResponse.data.cast;
+}
+
+// REST API for answering the Q: Which Marvel movies did each actor play in?
+
 app.get('/moviesPerActor', async (req, res) => {
   try {
     const actorName = req.query.actorName;
-    
-    const actorTMDbAPI = `https://api.themoviedb.org/3/search/person?api_key=${apiKey}&query=${actorName}`;
-    const actorTMDbAPIResponse = await axios.get(actorTMDbAPI);
-    
-    const actorTMDbId = actorTMDbAPIResponse.data.results[0]?.id;
 
-    if (!actorTMDbId) {
+    // Fetch the actor's ID based on the provided actor name
+    const actorId = await fetchActorId(actorName);
+
+    if (!actorId) {
       return res.status(404).json({ error: 'Actor not found' });
     }
 
-    const actorMoviesCredit = `https://api.themoviedb.org/3/person/${actorTMDbId}/movie_credits?api_key=${apiKey}`;
-    const actorMoviesCreditResponse = await axios.get(actorMoviesCredit);
+    // Use TMDb API to fetch movie credits for the actor
+    const actorCredits = await fetchMovieCreditsById(actorId);
 
-    const acterMovies = actorMoviesCreditResponse.data.cast.map(movie => movie.title);
+    // Extract Marvel movie titles from the credits
+    const marvelMovies = actorCredits.filter(movie => movie.genre_ids.includes(28));
+    const movieTitles = marvelMovies.map(movie => movie.title);
 
-    const response = { actorName, acterMovies };
+    // Return the response in the specified structure
+    const response = { actorName, movies: movieTitles };
     res.json(response);
   } catch (error) {
     console.error(error);
     res.status(500).json({ error: 'Internal Server Error' });
   }
 });
-
 
 // Start the Express server
 app.listen(port, () => {
